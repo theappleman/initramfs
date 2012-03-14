@@ -1,0 +1,64 @@
+#!/bin/busybox sh
+
+INIT=/sbin/init
+#Functions
+uuidlabel_root() {
+    for cmd in $(cat /proc/cmdline) ; do
+        case $cmd in
+        root=*)
+            dev=${cmd#root=}
+            type=${dev%%=*}
+            if [ $type = "LABEL" ] || [ $type = "UUID" ] ; then
+                mount -o ro -t ext4 $(findfs "$dev") /newroot
+            else
+                mount -o ro -t ext4 ${dev} /newroot
+            fi
+            ;;
+        esac
+    done
+}
+
+crypt_root() {
+    for cmd in $(cat /proc/cmdline) ; do
+        case $cmd in
+        crypt_root=*)
+            dev=${cmd#crypt_root=}
+            type=${dev%%=*}
+            if [ $type = "LABEL" ] || [ $type = "UUID" ] ; then
+                /sbin/cryptsetup -T 5 luksOpen $(findfs "$dev") cryptroot
+            else
+                /sbin/cryptsetup -T 5 luksOpen ${dev} cryptroot
+            fi
+            ;;
+        esac
+    done
+}
+
+rescue_shell() {
+    echo "Something went wrong. Dropping you to a shell."
+    /bin/busybox --install -s
+    exec /bin/sh
+}
+
+mount -t proc none /proc
+mount -t sysfs none /sys
+
+echo /sbin/mdev >/proc/sys/kernel/hotplug
+/sbin/mdev -s
+
+crypt_root || rescue_shell
+/sbin/lvm vgscan --mknodes || rescue_shell
+/sbin/lvm vgchange -a y || rescue_shell
+
+uuidlabel_root || rescue_shell
+
+CUSTOM_INIT=$(cat /proc/cmdline |  grep -o -e 'init\=[0-9a-zA-Z\/]* ')
+if [ ! "$CUSTOM_INIT" = "" ]; then
+        INIT=$CUSTOM_INIT
+fi
+
+umount /proc
+umount /sys
+
+exec /bin/busybox switch_root /newroot $INIT || rescue_shell
+
