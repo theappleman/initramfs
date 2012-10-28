@@ -1,8 +1,10 @@
 #!/bin/sh
 
+set -e
+ROOT="$(dirname $0)"
+
 newdirs() {
 	il=$1; shift
-	echo $il
 	test -d "$il" || exit 2
 	for i in "$@"; do
 		test -d $il/$i || mkdir -p $il/$i
@@ -16,13 +18,17 @@ copy() {
 	test "$(ldd $hl)" = "	not a dynamic executable" && cp -L $hl $(dirname $0)/$il
 }
 
-newdirs "$(dirname $0)" bin sbin dev proc sys newroot etc root lib
+newdirs $ROOT bin sbin dev proc sys newroot etc root lib
 
-copy /bin/busybox.static bin/busybox
-copy /sbin/cryptsetup sbin
-copy /sbin/lvm.static sbin/lvm && chmod +w sbin/lvm
+test -f /bin/busybox.static && bb=/bin/busybox.static
+test x"$bb" = "x" && test -f /bin/bb && bb=/bin/bb
+test x"$bb" != "x"
 
-ln -sf ../bin/busybox $(dirname $0)/sbin/mdev
+copy $bb $ROOT/bin/busybox
+copy /sbin/cryptsetup $ROOT/sbin
+copy /sbin/lvm.static $ROOT/sbin/lvm && chmod +w $ROOT/sbin/lvm
 
-find $(dirname $0) -name .git -prune -o \( -print0 \) | cpio --null -ov --format=newc | gzip -9 > ${1:-/tmp/rd.cpio.gz}
+ln -sf ../bin/busybox $ROOT/sbin/mdev
+
+find $ROOT -name .git -prune -o \( -print0 \) | cpio --null -ov --format=newc | gzip -9 > ${1:-/tmp/rd.cpio.gz}
 
